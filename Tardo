@@ -1,0 +1,210 @@
+#!/bin/bash
+clear
+echo "=============================================================================================="
+echo " "
+cat style.txt
+echo " " 
+echo "by Manu Alen | @hippi3c0w"
+echo "Latest Version 2018/12/19"
+echo " "
+echo "=============================================================================================="
+
+
+db_user=`cat db.cfg | grep user | cut -d ":" -f2`
+db_pwd=`cat db.cfg | grep pwd | cut -d ":" -f2`
+current_date=`date +%Y%m%d`
+function usage()
+{
+echo "help			-			Show all the available commands in Tardo tool"
+echo "domain			-			Specify the victim domain" 
+
+}
+#Color variables
+BLACK='\033[0;30m'
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+ORANGE='\033[0;33m'
+PURPLE='\033[0;34m'
+CYAN='\033[0;35m'
+LIGHTGRAY='\033[0;36m'
+NC='\033[0m'
+DARKGRAY='\033[1;30m'
+LIGHTRED='\033[1;31m'
+LIGHTGREEN='\033[1;32m'
+LIGHTORANGE='\033[1;33m'
+LIGHTPURPLE='\033[1;34m'
+LIGHTCYAN='\033[1;35m'
+#Check status of mysql service
+serv=`systemctl status mysql | grep active | cut -d ":" -f2 | cut -d "(" -f1 | cut -d " " -f2`
+if [[ $serv == "inactive" ]] ; then
+#start mysql service
+	systemctl start mysql
+
+fi #fi of manage mysql status
+
+#check for databases
+dbs=`mysql -u $db_user -p$db_pwd -e "show databases"`
+#adding to a file
+echo $dbs > dbs.txt
+#cach specific databases
+cached=`cat dbs.txt | grep mails| wc -l`
+if [[ $cached -eq 1 ]] ; then
+	  read -p "search for a project: " project
+#search for the table with mails of the specific project
+# i will need a verification of $project because if in this var contains the word "mails" we could have errors
+	  tables=`mysql -u $db_user -p$db_pwd -e "use mails;show tables"| grep $project| wc -l`
+	  if [[ $tables -ne 1 ]] ; then
+		mysql -u $db_user -p$db_pwd -e "CREATE TABLE mails.$project (id int NOT NULL  auto_increment, mail VARCHAR(100), twitter VARCHAR (1), amazon VARCHAR(1), netflix VARCHAR(1),  PRIMARY KEY(id))"
+		if [[ -d logs/ ]] ; then
+		echo "Table $project has been created--> $current_date" > logs/tardo.log
+		else
+		mkdir logs
+		echo "Table $project already exists--> $current_date" > logs/tardo.log
+		fi #fi to check if logs/ folder exist
+	  fi #fi of tables variable
+else
+	mysql -u $db_user -p$db_pwd -e "drop table mails.$project"
+	mysql -u $db_user -p$db_pwd -e "CREATE DATABASE mails"
+	echo "Database mails has been created---> $current_date" > logs/tardo.log
+	mysql -u $db_user -p$db_pwd -e "CREATE TABLE mails.$project (id int NOT NULL  auto_increment, twitter VARCHAR (1), amazon VARCHAR(1), netflix VARCHAR(1))"
+	echo "Table $project has been created---> $current_date" > logs/tardo.log
+fi #fi of cached variable
+#creating a shell
+command=""
+while [[ $command != "exit" ]]
+do
+read -p "Tardo> " command
+	if [[ $command == help ]] ; then
+		usage
+	fi #fi of command option
+	op=`echo $command | cut -d " " -f1`
+        domain=`echo $command | cut -d " " -f2`
+
+	if [[ $op == domain ]] ; then
+	read -p "Choose the number of mails to obtain: " nmail
+	echo -e "[${GREEN}+${NC}] Obtaining mails for domain $domain"
+	theharvester -d $domain -l $nmail -b all>logs/execution.log
+	cat logs/execution.log | grep @ |  grep -v cmartorella>logs/execution1.log
+	found=`cat logs/execution1.log |  wc -l`
+		if [[ $found -ge 1 ]] ; then
+			echo -e "[${GREEN}+${NC}] E-mails found"
+			echo " " 
+			#cat logs/execution1.log
+				for i in $(cat logs/execution1.log)
+				do
+					lenght=`cat logs/execution1.log | wc -l`
+					 
+					
+					
+						mysql -u $db_user -p$db_pwd -e "INSERT INTO mails.$project (mail) values ('$i')"
+						echo -e "	[${GREEN}*${NC}] Adding $i to mails.$project"
+						sleep 2
+					
+				done
+				#execution of brute login 
+				echo -e "[${GREEN}+${NC}] Running Loging OSINT Ripper"
+				python tardo_login.py > execute.txt
+				sleep 2
+				twitterAccounts=`cat execute.txt | grep -i "account found" | grep -i "twitter" | cut -d ":" -f3`
+				amazonAccounts=`cat execute.txt | grep -i "account found" | grep -i "amazon" | cut -d ":" -f4 | cut -d " " -f3`
+				pwnedMails=`cat execute.txt | grep -i "haveibeenpwned" | grep -i "email appear" | cut -d " " -f5`
+				netflixAccounts=`cat execute.txt | grep -i "account found" | grep -i "netflix" | cut -d ":" -f3`
+				#mkdir -p accounts
+				echo -e "$twitterAccounts\n" > accounts/twitterAccounts.txt
+				echo -e "$amazonAccounts\n" > accounts/amazonAccounts.txt
+				echo -e "$pwnedMails\n" > accounts/pwnedMails.txt
+				echo -e "$netflixAccounts\n" > accounts/netflixAccounts.txt
+				echo -e "[${GREEN}+${NC}] Making up data obtained"
+				sleep 2
+				emptyT=`cat accounts/twitterAccounts.txt | wc -l`
+				emptyA=`cat accounts/amazonAccounts.txt | wc -l`
+				emptyN=`cat accounts/netflixAccounts.txt | wc -l`
+				emptyH=`cat accounts/pwnedMails.txt| wc -l`
+				#show in the screen the accounts obtained
+				if [ $emptyT -lt 1 ] ; then
+				echo -e "[${RED}!${NC}] ${RED}No Twitter accounts found${NC}"
+				else
+				echo -e "[${GREEN}+${NC}] ${PURPLE} Twitter accounts found${NC}"
+				echo "==========================================================="
+				cat accounts/twitterAccounts.txt
+				fi #fi of emptyT
+
+				if [ $emptyA -lt 1 ] ; then
+                                echo -e "[${RED}!${NC}] ${RED}No Amazon accounts found${NC}"
+                                else
+                                echo -e "[${GREEN}+${NC}] ${PURPLE} Amazon accounts found${NC}"
+                                echo "==========================================================="
+				cat accounts/amazonAccounts.txt
+                                fi #fi of emptyA
+
+                                if [ $emptyN -lt 1 ] ; then
+                                echo -e "[${RED}!${NC}] ${RED}No Netflix accounts found${NC}"
+                                else
+                                echo -e "[${GREEN}+${NC}] ${PURPLE} Netflix accounts found${NC}"
+                                echo "==========================================================="
+				cat accounts/netflixAccounts.txt
+                                fi #fi of emptyN
+
+				if [ $emptyH -lt 1 ] ; then
+				echo -e "[${RED}!${NC}] ${RED}No Pwned accounts found${NC}"
+                                else
+                                echo -e "[${GREEN}+${NC}] ${PURPLE} Pwned accounts found${NC}"
+                                echo "==========================================================="
+                                cat accounts/pwnedMails.txt
+				fi #fi of emptyH
+				echo -e "[${GREEN}+${NC}] Trying to obtaing docs,excels,pdfs,etc. files"
+				echo " " 
+				sleep 2
+				#obtain urls with pdf and doc files
+				cat execute.txt | grep pdf | cut -d ">" -f2| uniq>urls.txt
+				cat execute.txt | grep ".doc" | cut -d ">" -f2 | uniq>>urls.txt
+				#download this files
+				content=`cat urls.txt | wc -l`
+				if [ $content -lt 1 ] ; then
+					echo -e "[${RED}!${NC}] No files obtained."
+				else
+				wget -i urls.txt &>/dev/null
+					if [ -f listing.txt ]; then
+						rm -rf listing.txt
+
+						echo -e "$(ls | grep pdf)" >> listing.txt
+					else
+
+						echo -e "$(ls | grep pdf)" >> listing.txt	
+
+					fi #fi to check if listing.txt file exist
+						
+				for f in $(cat listing.txt)
+				do
+					if [ -f metadata.txt ]; then
+							rm -Rf metadata.txt
+						fi # end fi of delete metadata file
+					./Image-ExifTool-11.22/exiftool -a $f>>metadata.txt
+
+				done
+				fi #fi of content variable
+					echo -e "[${GREEN}+${NC}] ${PURPLE}Metadata found${NC}"
+					echo "======================================================================="
+					metadataContent=`cat metadata.txt | wc -l`
+					if [ $metadataContent -lt 1 ]; then
+						echo -e "[${RED}!${NC}] No metadata found"
+					else
+
+					cat metadata.txt
+					fi #fi of metadatavariable
+
+					if [ -d files/ ]; then
+						mkdir -p $project
+						cp *pdf* $project/
+						rm -Rf *pdf*
+					else
+						mkdir -p files/$project
+						cp *pdf* $project/
+						rm -Rf *pdf*
+					fi #fi of .d files
+				
+			echo -e "[${RED}!${NC}] No E-mails found for domain $domain"
+		fi
+	fi
+
+done
