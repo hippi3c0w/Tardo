@@ -1,0 +1,8 @@
+re
+mechanize
+cookielib
+json
+duckduckgo
+urllib2
+beautifulsoup4
+BeautifulSoup
